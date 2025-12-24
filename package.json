@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@codemirror/lang-yaml": "^6.1.2",
+    "@codemirror/lint": "^6.9.2",
     "@codemirror/state": "^6.5.3",
     "@uiw/react-codemirror": "^4.25.4",
     "appium": "2.19.0",
