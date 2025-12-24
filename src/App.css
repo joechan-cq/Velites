@@ -1,8 +1,47 @@
 #root {
-  max-width: 1280px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
+}
+
+/* 两列布局 */
+.app-container {
+  display: flex;
+  gap: 2rem;
+  justify-content: space-between;
+}
+
+.left-panel {
+  flex: 1;
+  max-width: 400px;
+}
+
+.right-panel {
+  flex: 2;
+  min-width: 600px;
+}
+
+/* 编辑器占位符 */
+.editor-placeholder {
+  background-color: #f8f9fa;
+  border: 2px dashed #ced4da;
+  border-radius: 4px;
+  padding: 4rem 2rem;
+  margin-top: 1rem;
+  color: #6c757d;
+}
+
+/* 响应式设计 */
+@media (max-width: 1200px) {
+  .app-container {
+    flex-direction: column;
+  }
+  
+  .left-panel, .right-panel {
+    max-width: 100%;
+    min-width: auto;
+  }
 }
 
 .logo {
@@ -35,8 +74,125 @@
 
 .card {
   padding: 2em;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
 }
 
-.read-the-docs {
-  color: #888;
+h1 {
+  color: #333;
+  margin-bottom: 2rem;
+}
+
+h2 {
+  color: #444;
+  margin-bottom: 1.5rem;
+}
+
+h3 {
+  color: #555;
+  margin-bottom: 1rem;
+  text-align: left;
+}
+
+button {
+  background-color: #646cff;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.3s;
+  margin: 0.5rem;
+}
+
+button:hover:not(:disabled) {
+  background-color: #535bf2;
+}
+
+button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.connect-btn {
+  padding: 8px 16px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-right: 8px;
+}
+
+.connect-btn:hover {
+  background-color: #218838;
+}
+
+.connect-btn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+}
+
+.disconnect-btn {
+  padding: 8px 16px;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-top: 10px;
+}
+
+.disconnect-btn:hover {
+  background-color: #c82333;
+}
+
+.disconnect-btn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+}
+
+.devices-list {
+  margin-top: 2rem;
+  text-align: left;
+}
+
+.devices-list ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+.device-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+  background-color: white;
+}
+
+.device-info {
+  flex: 1;
+}
+
+.error {
+  color: #e74c3c;
+  margin: 1rem 0;
+}
+
+.connected-info {
+  padding: 1rem;
+  border: 1px solid #2ecc71;
+  border-radius: 4px;
+  background-color: #d4edda;
+  color: #155724;
+  margin-top: 1rem;
+  text-align: left;
 }
