@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import './App.css'
+import { CODE_EXAMPLE, CodeEditor } from './components/CodeEditor'
 
 function App() {
   const [devices, setDevices] = useState([])
   const [deviceConnections, setDeviceConnections] = useState({}) // 记录每个设备的连接状态
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [scriptContent, setScriptContent] = useState(`${CODE_EXAMPLE}`)
 
   // 获取设备列表
   const fetchDevices = async () => {
@@ -174,10 +176,11 @@ function App() {
         <div className="right-panel">
           <div className="card">
             <h2>脚本编辑器</h2>
-            <div className="editor-placeholder">
-              <p>代码编辑器区域</p>
-              <p>（后续将嵌入代码编辑器）</p>
-            </div>
+            <CodeEditor 
+              value={scriptContent} 
+              onChange={setScriptContent} 
+              height="calc(100vh - 150px)" 
+            />
           </div>
         </div>
       </div>

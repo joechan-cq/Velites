@@ -3,7 +3,6 @@
   height: 100vh;
   margin: 0;
   padding: 0;
-  text-align: center;
   overflow: hidden;
 }
 
@@ -42,6 +41,16 @@
   padding: 4rem 2rem;
   margin-top: 1rem;
   color: #6c757d;
+}
+
+/* 代码编辑器 */
+.right-panel .card {
+  text-align: left;
+}
+
+/* 确保编辑器内容左对齐 */
+.cm-editor {
+  text-align: left !important;
 }
 
 /* 响应式设计 */
