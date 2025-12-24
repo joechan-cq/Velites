@@ -265,8 +265,11 @@ app.post('/api/disconnect/:deviceId', async (req, res) => {
     const driver = appiumDrivers.get(deviceId);
     
     if (!driver) {
-      return res.status(404).json({ 
-        error: `Device ${deviceId} is not connected` 
+      // 即使驱动实例不存在，也从映射中移除它
+      appiumDrivers.delete(deviceId);
+      return res.json({
+        success: true,
+        message: `Device ${deviceId} was not connected, removed from mapping`
       });
     }
     
@@ -279,6 +282,27 @@ app.post('/api/disconnect/:deviceId', async (req, res) => {
     res.json({
       success: true,
       message: `Disconnected from device ${deviceId}`
+    });
+  } catch (error) {
+    console.error('Disconnect error:', error);
+    // 即使断开连接失败，也从映射中移除驱动实例
+    appiumDrivers.delete(deviceId);
+    res.json({
+      success: true,
+      message: `Device ${deviceId} connection removed (error: ${error.message})`
+    });
+  }
+});
+
+// 获取当前连接的设备列表
+app.get('/api/connected-devices', (req, res) => {
+  try {
+    // 从appiumDrivers映射中提取所有连接的设备ID
+    const connectedDevices = Array.from(appiumDrivers.keys());
+    
+    res.json({
+      success: true,
+      devices: connectedDevices
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

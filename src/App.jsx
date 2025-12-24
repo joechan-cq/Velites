@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import axios from 'axios'
 import './App.css'
 
 function App() {
   const [devices, setDevices] = useState([])
-  const [connectedDevice, setConnectedDevice] = useState(null)
+  const [deviceConnections, setDeviceConnections] = useState({}) // 记录每个设备的连接状态
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -27,12 +27,12 @@ function App() {
     setLoading(true)
     setError(null)
     try {
-      const response = await axios.post(`http://localhost:3001/api/connect/${deviceId}`, { platform })
-      setConnectedDevice({
-        id: deviceId,
-        platform,
-        ...response.data
-      })
+      await axios.post(`http://localhost:3001/api/connect/${deviceId}`, { platform })
+      // 更新设备连接状态
+      setDeviceConnections(prev => ({
+        ...prev,
+        [deviceId]: true
+      }))
     } catch (err) {
       setError('连接设备失败: ' + err.message)
     } finally {
@@ -46,13 +46,62 @@ function App() {
     setError(null)
     try {
       await axios.post(`http://localhost:3001/api/disconnect/${deviceId}`)
-      setConnectedDevice(null)
+      // 更新设备连接状态
+      setDeviceConnections(prev => ({
+        ...prev,
+        [deviceId]: false
+      }))
     } catch (err) {
+      // 即使断开失败，也将前端状态更新为断开
+      setDeviceConnections(prev => ({
+        ...prev,
+        [deviceId]: false
+      }))
       setError('断开设备失败: ' + err.message)
     } finally {
       setLoading(false)
     }
   }
+
+  // 检查当前连接的设备
+  const checkConnectedDevices = async () => {
+    try {
+      const response = await axios.get('http://localhost:3001/api/connected-devices')
+      const connectedDevices = response.data.devices
+      
+      // 更新设备连接状态
+      setDeviceConnections(prev => {
+        const newConnections = { ...prev }
+        // 首先将所有设备状态设置为false
+        Object.keys(newConnections).forEach(deviceId => {
+          newConnections[deviceId] = false
+        })
+        // 然后将服务器返回的连接设备设置为true
+        connectedDevices.forEach(deviceId => {
+          newConnections[deviceId] = true
+        })
+        return newConnections
+      })
+    } catch (err) {
+      console.error('检查连接设备失败:', err)
+    }
+  }
+
+  // 定期检查连接状态
+  useEffect(() => {
+    // 启动定期检查（每5秒检查一次）
+    const interval = setInterval(checkConnectedDevices, 3000)
+    
+    // 组件挂载时立即检查一次
+    checkConnectedDevices()
+    
+    // 组件卸载时清除定期检查
+    return () => {
+      if (interval) {
+        clearInterval(interval)
+      }
+    }
+  }, [])
 
   return (
     <>
@@ -60,11 +109,17 @@ function App() {
         {/* 左侧设备管理面板 */}
         <div className="left-panel">
           <div className="card">
-            <h2>设备管理</h2>
-            
-            <button onClick={fetchDevices} disabled={loading}>
-              {loading ? '加载中...' : '获取可用设备'}
-            </button>
+            <div className="header-row">
+              <h2>设备管理</h2>
+              <button 
+                className="refresh-button" 
+                onClick={fetchDevices} 
+                disabled={loading}
+                title="获取可用设备"
+              >
+                {loading ? '↻' : '↻'}
+              </button>
+            </div>
             
             {error && <p className="error">{error}</p>}
             
@@ -74,17 +129,33 @@ function App() {
                 <ul>
                   {devices.map((device) => (
                     <li key={device.id} className="device-item">
+                      {deviceConnections[device.id] && (
+                        <div className="connection-status">已连接</div>
+                      )}
                       <div className="device-info">
                         <strong>ID:</strong> {device.id}<br />
                         <strong>平台:</strong> {device.platform}<br />
-                        <strong>状态:</strong> {device.status}
                       </div>
-                      <button 
-                        onClick={() => connectDevice(device.id, device.platform)}
-                        disabled={loading || connectedDevice?.id === device.id}
-                      >
-                        {connectedDevice?.id === device.id ? '已连接' : '连接'}
-                      </button>
+                      <div className="device-actions">
+                        {!deviceConnections[device.id] && (
+                          <button 
+                            className="connect-button"
+                            onClick={() => connectDevice(device.id, device.platform)}
+                            disabled={loading}
+                          >
+                            连接
+                          </button>
+                        )}
+                        {deviceConnections[device.id] && (
+                          <button 
+                            className="disconnect-button"
+                            onClick={() => disconnectDevice(device.id)}
+                            disabled={loading}
+                          >
+                            {loading ? '断开中...' : '断开'}
+                          </button>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -96,19 +167,7 @@ function App() {
             )}
           </div>
           
-          {connectedDevice && (
-            <div className="connected-info">
-              <h3>当前连接设备</h3>
-              <p>设备ID: {connectedDevice.id} ({connectedDevice.platform})</p>
-              {connectedDevice.message && <p>{connectedDevice.message}</p>}
-              <button 
-                onClick={() => disconnectDevice(connectedDevice.id)}
-                disabled={loading}
-              >
-                {loading ? '断开中...' : '断开连接'}
-              </button>
-            </div>
-          )}
+
         </div>
         
         {/* 右侧代码编辑器面板 */}
