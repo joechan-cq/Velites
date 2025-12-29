@@ -37,9 +37,12 @@ const CODE_EXAMPLE = `# 在此输入YAML测试脚本
 name: "示例测试"
 description: "这是一个测试脚本示例"
 steps:
-  action:
-    type: "click"
-    position: [200,300]`;
+  - launch_app:
+      app_id: "com.example.app"
+  - wait:
+      duration: 3000
+  - click:
+      pos: [200,300]`;
 
 const CodeEditor = ({ value, onChange, height = '600px' }) => {
   return (
@@ -52,7 +55,7 @@ const CodeEditor = ({ value, onChange, height = '600px' }) => {
         yamlLinter()
       ]}
       onChange={(value) => onChange(value)}
-      theme={'none'}
+      theme={'light'}
       basicSetup={{
         lineNumbers: true,
         highlightActiveLine: true,

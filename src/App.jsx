@@ -9,6 +9,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [scriptContent, setScriptContent] = useState(`${CODE_EXAMPLE}`)
+  const [isExecuting, setIsExecuting] = useState(false) // 执行脚本的状态
 
   // 获取设备列表
   const fetchDevices = async () => {
@@ -62,6 +63,60 @@ function App() {
       setError('断开设备失败: ' + err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const [executionStatus, setExecutionStatus] = useState(null) // 记录脚本执行状态
+  const [showAlert, setShowAlert] = useState(false) // 控制弹窗是否显示
+
+  // 执行脚本
+  const executeScript = async () => {
+    // 确保至少有一个设备连接
+    const hasConnectedDevice = Object.values(deviceConnections).some(status => status === true)
+    if (!hasConnectedDevice) {
+      setError('请先连接至少一个设备')
+      return
+    }
+
+    // 确保脚本内容不为空
+    if (!scriptContent.trim()) {
+      setError('请先编写脚本内容')
+      return
+    }
+
+    setIsExecuting(true)
+    setError(null)
+    setExecutionStatus(null)
+    
+    try {
+      // 获取第一个连接的设备ID
+      const connectedDeviceId = Object.keys(deviceConnections).find(id => deviceConnections[id] === true)
+      
+      const response = await axios.post('http://localhost:3001/api/execute-script', {
+        script: scriptContent,
+        deviceId: connectedDeviceId
+      })
+      
+      setExecutionStatus({
+        type: 'success',
+        message: '脚本执行成功',
+        result: response.data
+      })
+      
+      // 显示弹窗
+      setShowAlert(true)
+    } catch (err) {
+      setError('执行脚本失败: ' + err.message)
+      setExecutionStatus({
+        type: 'error',
+        message: '脚本执行失败',
+        error: err.message
+      })
+      
+      // 显示弹窗
+      setShowAlert(true)
+    } finally {
+      setIsExecuting(false)
     }
   }
 
@@ -179,8 +234,57 @@ function App() {
             <CodeEditor 
               value={scriptContent} 
               onChange={setScriptContent} 
-              height="calc(100vh - 150px)" 
+              height="calc(100vh - 200px)" 
             />
+            <div className="editor-actions">
+              <button 
+                className="execute-button"
+                onClick={executeScript}
+                disabled={isExecuting || loading}
+              >
+                {isExecuting ? '执行中...' : '执行脚本'}
+              </button>
+            </div>
+            {executionStatus && (
+              <div className={`execution-status ${executionStatus.type}`}>
+                <strong>{executionStatus.message}</strong>
+                {executionStatus.type === 'success' && (
+                  <div className="execution-result">
+                    <p>命令执行数量: {executionStatus.result.executionResult.summary.totalCommands}</p>
+                    <p>成功执行: {executionStatus.result.executionResult.summary.successfulCommands}</p>
+                    <p>失败执行: {executionStatus.result.executionResult.summary.failedCommands}</p>
+                  </div>
+                )}
+                {executionStatus.type === 'error' && (
+                  <div className="execution-error">
+                    <p>{executionStatus.error}</p>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* 执行结果弹窗 */}
+            {showAlert && executionStatus && (
+              <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)', zIndex: 1000, width: '80%', maxWidth: '500px' }}>
+                <div style={{ position: 'relative' }}>
+                  <h2 style={{ marginBottom: '20px' }}>
+                    {executionStatus.type === 'success' ? '脚本执行成功' : '脚本执行失败'}
+                  </h2>
+                  
+                  {executionStatus.type === 'error' && (
+                    <div style={{ marginBottom: '20px', color: '#dc3545' }}>
+                      <p><strong>错误信息:</strong> {executionStatus.error}</p>
+                    </div>
+                  )}
+                  
+                  <div style={{ textAlign: 'right' }}>
+                    <button onClick={() => setShowAlert(false)} style={{ padding: '8px 16px', backgroundColor: '#646cff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                      关闭
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
