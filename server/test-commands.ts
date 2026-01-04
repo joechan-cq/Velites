@@ -1,4 +1,4 @@
-import { parseYamlScript } from './yaml-parser.js';
+import { parseYamlScript, ParsedScriptResult } from './yaml-parser';
 
 // 测试脚本示例
 const testScript = `
@@ -22,13 +22,13 @@ steps:
 
 // 测试解析功能
 console.log('开始测试命令解析功能...');
-const result = parseYamlScript(testScript);
+const result: ParsedScriptResult = parseYamlScript(testScript);
 
 if (result.success) {
   console.log('✅ 脚本解析成功！');
-  console.log('脚本名称:', result.metadata.scriptName);
-  console.log('脚本描述:', result.metadata.description);
-  console.log('命令数量:', result.metadata.commandCount);
+  console.log('脚本名称:', result.metadata?.scriptName);
+  console.log('脚本描述:', result.metadata?.description);
+  console.log('命令数量:', result.metadata?.commandCount);
   console.log('脚本内容:', JSON.stringify(result.script, null, 2));
 } else {
   console.error('❌ 脚本解析失败:', result.error);
@@ -61,8 +61,14 @@ steps:
       to: [200, 100]
 `;
 
+// 定义无效脚本的接口
+interface InvalidScriptTest {
+  name: string;
+  script: string;
+}
+
 // 测试这些错误脚本
-const invalidScripts = [
+const invalidScripts: InvalidScriptTest[] = [
   { name: '缺少app_id的launch_app', script: invalidScript1 },
   { name: '缺少定位参数的click', script: invalidScript2 },
   { name: '缺少from参数的scroll', script: invalidScript3 }
@@ -70,7 +76,7 @@ const invalidScripts = [
 
 for (const { name, script } of invalidScripts) {
   console.log(`\n测试: ${name}`);
-  const result = parseYamlScript(script);
+  const result: ParsedScriptResult = parseYamlScript(script);
   if (!result.success) {
     console.log('✅ 预期的错误:', result.error);
   } else {

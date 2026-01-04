@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { exec } from 'child_process';
 import { spawn } from 'child_process';
@@ -7,18 +7,42 @@ import { remote } from 'webdriverio';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import process from 'process';
-import { parseYamlScript, executeParsedScript } from './yaml-parser.js';
+import { parseYamlScript, executeParsedScript, ParsedScriptResult, ScriptExecutionResult } from './yaml-parser';
 
 // 获取当前文件路径信息（ES模块兼容方式）
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // 存储Appium进程实例
-let appiumProcess = null;
+let appiumProcess: ReturnType<typeof spawn> | null = null;
 const appiumServerPort = 4723;
 
+// 定义设备信息的接口
+interface Device {
+  id: string;
+  status: 'device' | 'offline' | 'unauthorized';
+  platform: 'android' | 'ios';
+}
+
+// 定义连接请求的接口
+interface ConnectRequest {
+  platform: 'android' | 'ios';
+}
+
+// 定义命令执行请求的接口
+interface ExecuteCommandRequest {
+  command: string;
+  params?: any[];
+}
+
+// 定义脚本执行请求的接口
+interface ExecuteScriptRequest {
+  script: string;
+  deviceId: string;
+}
+
 // 检查Appium服务器是否运行（合并了原有两个函数的功能）
-async function checkAppiumHealth() {
+async function checkAppiumHealth(): Promise<boolean> {
     try {
         const http = await import('http');
         return new Promise((resolve) => {
@@ -51,7 +75,7 @@ async function checkAppiumHealth() {
 }
 
 // 启动Appium服务器
-async function startAppiumServer() {
+async function startAppiumServer(): Promise<ReturnType<typeof spawn> | null> {
     // 先检查是否已经在运行
     const alreadyRunning = await checkAppiumHealth();
     if (alreadyRunning) {
@@ -123,7 +147,7 @@ const app = express();
 const port = 3001;
 
 // 存储Appium驱动实例
-const appiumDrivers = new Map();
+const appiumDrivers = new Map<string, any>();
 
 // 启用CORS
 app.use(cors());
@@ -135,16 +159,16 @@ app.use(express.json());
 const execAsync = util.promisify(exec);
 
 // 解析ADB设备列表
-function parseAdbDevices(output) {
+function parseAdbDevices(output: string): Device[] {
     const lines = output.split('\n');
-    const devices = [];
+    const devices: Device[] = [];
 
     for (const line of lines) {
         const match = line.match(/^(\S+)\s+(device|offline|unauthorized)$/);
         if (match) {
             devices.push({
                 id: match[1],
-                status: match[2],
+                status: match[2] as 'device' | 'offline' | 'unauthorized',
                 platform: 'android'
             });
         }
@@ -154,9 +178,9 @@ function parseAdbDevices(output) {
 }
 
 // 解析iOS设备列表
-function parseIosDevices(output) {
+function parseIosDevices(output: string): Device[] {
     const lines = output.split('\n');
-    const devices = [];
+    const devices: Device[] = [];
 
     for (const line of lines) {
         const match = line.match(/^(\S+)\s+device$/);
@@ -173,17 +197,17 @@ function parseIosDevices(output) {
 }
 
 // 获取所有设备
-app.get('/api/devices', async (req, res) => {
+app.get('/api/devices', async (req: Request, res: Response) => {
     try {
-        let devices = [];
+        let devices: Device[] = [];
 
         // 检测Android设备（使用ADB）
         try {
             const { stdout: adbOutput } = await execAsync('adb devices');
             const androidDevices = parseAdbDevices(adbOutput);
             devices = devices.concat(androidDevices);
-        } catch (adbError) {
-            console.log('ADB not found or error:', adbError.message);
+        } catch (adbError: unknown) {
+            console.log('ADB not found or error:', adbError instanceof Error ? adbError.message : 'Unknown error');
         }
 
         // 检测iOS设备（使用idevice_id）
@@ -191,24 +215,24 @@ app.get('/api/devices', async (req, res) => {
             const { stdout: iosOutput } = await execAsync('idevice_id -l');
             const iosDevices = parseIosDevices(iosOutput);
             devices = devices.concat(iosDevices);
-        } catch (iosError) {
-            console.log('idevice_id not found or error:', iosError.message);
+        } catch (iosError: unknown) {
+            console.log('idevice_id not found or error:', iosError instanceof Error ? iosError.message : 'Unknown error');
         }
 
         res.json({ devices });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
 });
 
 // 连接设备
-app.post('/api/connect/:deviceId', async (req, res) => {
+app.post('/api/connect/:deviceId', async (req: Request<{ deviceId: string }, {}, ConnectRequest>, res: Response) => {
     const { deviceId } = req.params;
     const { platform } = req.body;
 
     try {
         // 选择相应的Appium服务配置 (Appium 2.x使用根路径，不再需要/wd/hub)
-        const appiumConfig = {
+        const appiumConfig: any = {
             protocol: 'http',
             hostname: 'localhost',
             port: appiumServerPort,
@@ -248,14 +272,14 @@ app.post('/api/connect/:deviceId', async (req, res) => {
     } catch (error) {
         console.error('Appium connection error:', error);
         res.status(500).json({ 
-            error: error.message,
-            details: error.stack 
+            error: error instanceof Error ? error.message : 'Unknown error',
+            details: error instanceof Error ? error.stack : undefined
         });
     }
 });
 
 // 断开设备连接
-app.post('/api/disconnect/:deviceId', async (req, res) => {
+app.post('/api/disconnect/:deviceId', async (req: Request<{ deviceId: string }>, res: Response) => {
     const { deviceId } = req.params;
 
     try {
@@ -287,13 +311,13 @@ app.post('/api/disconnect/:deviceId', async (req, res) => {
         appiumDrivers.delete(deviceId);
         res.json({
             success: true,
-            message: `Device ${deviceId} connection removed (error: ${error.message})`
+            message: `Device ${deviceId} connection removed (error: ${error instanceof Error ? error.message : 'Unknown error'})`
         });
     }
 });
 
 // 获取当前连接的设备列表
-app.get('/api/connected-devices', (req, res) => {
+app.get('/api/connected-devices', (req: Request, res: Response) => {
     try {
         // 从appiumDrivers映射中提取所有连接的设备ID
         const connectedDevices = Array.from(appiumDrivers.keys());
@@ -303,12 +327,12 @@ app.get('/api/connected-devices', (req, res) => {
             devices: connectedDevices
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
 });
 
 // 执行Appium命令
-app.post('/api/execute/:deviceId', async (req, res) => {
+app.post('/api/execute/:deviceId', async (req: Request<{ deviceId: string }, {}, ExecuteCommandRequest>, res: Response) => {
     const { deviceId } = req.params;
     const { command, params = [] } = req.body;
 
@@ -337,12 +361,12 @@ app.post('/api/execute/:deviceId', async (req, res) => {
             result
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
 });
 
 // 解析YAML脚本
-app.post('/api/execute-script', async (req, res) => {
+app.post('/api/execute-script', async (req: Request<{}, {}, ExecuteScriptRequest>, res: Response) => {
   try {
     const { script, deviceId } = req.body;
     
@@ -388,12 +412,12 @@ app.post('/api/execute-script', async (req, res) => {
       executionResult
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 
 // 启动服务器
-async function startServer() {
+async function startServer(): Promise<void> {
     try {
         // 启动Appium服务器
         await startAppiumServer();
