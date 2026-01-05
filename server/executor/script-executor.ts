@@ -13,6 +13,7 @@ import {
   BreakException,
   LabelNameEmptyError,
   LabelNameDuplicateError,
+  errorOutput,
 } from "./errors";
 
 /**
@@ -99,17 +100,13 @@ export class ScriptExecutor {
           }
         } catch (error) {
           // 记录失败结果
-          vError(
-            `Execute ${stepKey} failed: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
+          vError(`Execute ${stepKey} failed: ${errorOutput(error)}`);
           results.push({
             step: results.length + 1,
             command: stepKey,
             params: stepParams,
             success: false,
-            result: error instanceof Error ? error.message : String(error),
+            result: errorOutput(error),
           });
 
           // 检查是否有失败后操作
@@ -130,12 +127,8 @@ export class ScriptExecutor {
               continue;
             }
           } else {
-            // 如果没有定义失败处理，抛出错误
             throw error;
           }
-
-          // 没有指定失败后操作或不需要跳过下一步，正常执行下一个step
-          this.currentScope.setCurrentStepIndex(currentStepIndex + 1);
         }
       }
 
@@ -151,7 +144,7 @@ export class ScriptExecutor {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: errorOutput(error),
         results,
         summary: {
           totalCommands: this.script.steps.length,
@@ -435,7 +428,7 @@ export class ScriptExecutor {
   private async handleOnFailureAction(on_failure: {
     action: string;
     target?: string;
-  }): Promise<{ skipNext: boolean; newIndex?: number; isBreak?: boolean }> {
+  }): Promise<{ skipNext: boolean; newIndex?: number; isBreak?: boolean; isReturn?: boolean; }> {
     if (on_failure.action === ACTION.Goto) {
       const targetLabel = on_failure.target;
       if (!targetLabel) {

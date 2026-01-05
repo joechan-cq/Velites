@@ -2,6 +2,7 @@ import yaml from "js-yaml";
 import { Command } from "../command/base";
 import { createCommand } from "../command/registry";
 import { vError, vLog } from "../log/logger";
+import { errorOutput } from "../executor/errors";
 
 // 定义YAML脚本的接口
 export interface YamlScript {
@@ -85,7 +86,7 @@ export function parseYamlScript(yamlScript: string): ParsedScriptResult {
     // 将脚本转换为命令实例数组
     const commandInstances = convertStepsToCommands(parsedScript.steps);
 
-    vLog("Parsed script:", parsedScript);
+    vLog(`Parsed script: ${parsedScript}`);
 
     return {
       success: true,
@@ -98,10 +99,10 @@ export function parseYamlScript(yamlScript: string): ParsedScriptResult {
       },
     };
   } catch (error) {
-    vError("Error parsing YAML script:", error);
+    vError(`Error parsing YAML script: ${error}`);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: errorOutput(error),
     };
   }
 }

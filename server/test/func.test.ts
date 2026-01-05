@@ -59,7 +59,7 @@ steps:
 
     // 验证执行结果
     expect(executionResult.success).toBe(false);
-    expect(executionResult.error).toContain('non_existent_function');
+    expect(executionResult.error).toContain('FunctionNotFoundError');
   });
 
   it('应该支持嵌套函数调用', async () => {

@@ -1,6 +1,7 @@
 import { parseYamlScript, ScriptExecutionResult } from './parser';
 import { ScriptExecutor } from './executor';
 import * as WebdriverIO from 'webdriverio';
+import { vError } from './log/logger';
 
 /**
  * 解析并执行YAML脚本
@@ -23,7 +24,15 @@ export async function executeYamlScript(yamlScript: string, driver: WebdriverIO.
   const executor = new ScriptExecutor(driver, parsedResult.script);
 
   // 执行脚本
-  return await executor.execute();
+  try {
+    return await executor.execute();
+  } catch (e) {
+    vError(e instanceof Error ? e.message : 'Unknown error');
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Unknown error'
+    };
+  }
 }
 
 // 导出所有模块

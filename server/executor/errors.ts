@@ -59,3 +59,7 @@ export class BreakException extends Error {
     this.name = "BreakException";
   }
 }
+
+export function errorOutput(e: any) {
+  return e instanceof Error ? (e.name + ": " + e.message) : `${e}`;
+}
