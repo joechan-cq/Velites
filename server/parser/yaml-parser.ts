@@ -1,6 +1,7 @@
-import yaml from 'js-yaml';
-import { Command } from '../command/base';
-import { createCommand } from '../command/registry';
+import yaml from "js-yaml";
+import { Command } from "../command/base";
+import { createCommand } from "../command/registry";
+import { vError, vLog } from "../log/logger";
 
 // 定义YAML脚本的接口
 export interface YamlScript {
@@ -57,10 +58,10 @@ export function parseYamlScript(yamlScript: string): ParsedScriptResult {
   try {
     // 解析YAML脚本为JavaScript对象
     const parsedScript = yaml.load(yamlScript) as YamlScript;
-    
+
     // 验证脚本格式
-    if (!parsedScript || typeof parsedScript !== 'object') {
-      throw new Error('Invalid script format');
+    if (!parsedScript || typeof parsedScript !== "object") {
+      throw new Error("Invalid script format");
     }
 
     if (!parsedScript.steps || !Array.isArray(parsedScript.steps)) {
@@ -68,13 +69,13 @@ export function parseYamlScript(yamlScript: string): ParsedScriptResult {
     }
 
     if (parsedScript.steps.length === 0) {
-      throw new Error('Script must contain at least one step');
+      throw new Error("Script must contain at least one step");
     }
 
     // 解析函数定义
     const functionsMap: Record<string, Array<Record<string, any>>> = {};
     if (parsedScript.functions && Array.isArray(parsedScript.functions)) {
-      parsedScript.functions.forEach(funcDef => {
+      parsedScript.functions.forEach((funcDef) => {
         if (funcDef.name && funcDef.steps && Array.isArray(funcDef.steps)) {
           functionsMap[funcDef.name] = funcDef.steps;
         }
@@ -84,24 +85,23 @@ export function parseYamlScript(yamlScript: string): ParsedScriptResult {
     // 将脚本转换为命令实例数组
     const commandInstances = convertStepsToCommands(parsedScript.steps);
 
-    console.log('Parsed script:', parsedScript);
-    console.log('Command instances:', commandInstances);
-    
+    vLog("Parsed script:", parsedScript);
+
     return {
       success: true,
       script: parsedScript,
       commandInstances,
       metadata: {
         commandCount: parsedScript.steps.length,
-        scriptName: parsedScript.name || 'Unnamed Script',
-        description: parsedScript.description || ''
-      }
+        scriptName: parsedScript.name || "Unnamed Script",
+        description: parsedScript.description || "",
+      },
     };
   } catch (error) {
-    console.error('Error parsing YAML script:', error);
+    vError("Error parsing YAML script:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : "Unknown error",
     };
   }
 }
@@ -113,10 +113,10 @@ export function parseYamlScript(yamlScript: string): ParsedScriptResult {
  */
 function convertStepsToCommands(steps: Array<Record<string, any>>): Command[] {
   const commands: Command[] = [];
-  
+
   // 控制流命令列表，这些命令由执行器直接处理，不需要转换为Command实例
-  const controlFlowCommands = ['loop', 'callfunc', 'goto', 'break'];
-  
+  const controlFlowCommands = ["loop", "callfunc", "label"];
+
   steps.forEach((step, index) => {
     const stepKeys = Object.keys(step);
     if (stepKeys.length !== 1) {
@@ -132,8 +132,12 @@ function convertStepsToCommands(steps: Array<Record<string, any>>): Command[] {
       commands.push({
         name: commandName,
         params: commandParams,
-        execute: async () => { /* 控制流命令由执行器处理 */ },
-        validate: () => { /* 控制流命令由执行器验证 */ }
+        execute: async () => {
+          /* 控制流命令由执行器处理 */
+        },
+        validate: () => {
+          /* 控制流命令由执行器验证 */
+        },
       } as any);
     } else {
       // 尝试创建命令实例，如果参数无效会抛出错误
@@ -141,7 +145,11 @@ function convertStepsToCommands(steps: Array<Record<string, any>>): Command[] {
         const command = createCommand(commandName, commandParams);
         commands.push(command);
       } catch (error) {
-        throw new Error(`Step ${index + 1} (${commandName}): ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(
+          `Step ${index + 1} (${commandName}): ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
       }
     }
   });

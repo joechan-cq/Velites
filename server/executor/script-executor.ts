@@ -1,6 +1,19 @@
-import { YamlScript, CommandResult, ScriptExecutionResult } from '../parser/yaml-parser';
-import { createCommand } from '../command/registry';
-import * as WebdriverIO from 'webdriverio';
+import { ACTION } from "../command/base";
+import {
+  YamlScript,
+  CommandResult,
+  ScriptExecutionResult,
+} from "../parser/yaml-parser";
+import { createCommand } from "../command/registry";
+import * as WebdriverIO from "webdriverio";
+import { vError, vInfo, vLog } from "../log/logger";
+import {
+  FunctionNotFoundError,
+  LableNotFoundError,
+  BreakException,
+  LabelNameEmptyError,
+  LabelNameDuplicateError,
+} from "./errors";
 
 /**
  * 脚本执行器 - 负责执行解析后的测试脚本
@@ -8,8 +21,11 @@ import * as WebdriverIO from 'webdriverio';
 export class ScriptExecutor {
   private driver: WebdriverIO.Browser;
   private script: YamlScript;
-  private functions: Record<string, Array<Record<string, any>>>;
+  //全局的function定义
+  private functions: Record<string, any>;
+  //当前正在执行的作用域
   private currentScope: Scope;
+  //作用域堆栈
   private scopeStack: Scope[];
 
   constructor(driver: WebdriverIO.Browser, script: YamlScript) {
@@ -17,14 +33,14 @@ export class ScriptExecutor {
     this.script = script;
     this.functions = {};
     this.scopeStack = [];
-    this.currentScope = new Scope('global', this.script.steps);
+    this.currentScope = new Scope("root", this.script);
     this.scopeStack.push(this.currentScope);
 
-    // 解析函数定义
+    // 解析函数定义，将其存储到functions对象中
     if (script.functions && Array.isArray(script.functions)) {
-      script.functions.forEach(funcDef => {
+      script.functions.forEach((funcDef) => {
         if (funcDef.name && funcDef.steps && Array.isArray(funcDef.steps)) {
-          this.functions[funcDef.name] = funcDef.steps;
+          this.functions[funcDef.name] = funcDef;
         }
       });
     }
@@ -37,64 +53,80 @@ export class ScriptExecutor {
     const results: CommandResult[] = [];
 
     try {
-      let currentStepIndex = 0;
+      //获取当前作用域的所有Steps
       const curSteps = this.currentScope.getSteps();
-      while (currentStepIndex < curSteps.length) {
+      //开始执行当前作用域的Steps
+      while (this.currentScope.getCurrentStepIndex() < curSteps.length) {
+        const currentStepIndex = this.currentScope.getCurrentStepIndex();
         const step = curSteps[currentStepIndex];
         const stepKey = Object.keys(step)[0];
         const stepParams = step[stepKey];
 
         try {
           // 执行当前步骤
-          console.log(`Execute ${stepKey} with params ${JSON.stringify(stepParams)}`);
           const result = await this.executeStep(stepKey, stepParams);
           results.push({
             step: results.length + 1,
             command: stepKey,
             params: stepParams,
             success: true,
-            result
+            result,
           });
 
           // 检查是否有成功后操作
           if (stepParams.on_success) {
-            console.info(`Execute ${stepKey} success`);
-            const actionResult = await this.handleOnSuccessAction(stepParams.on_success);
+            vInfo(`Execute ${stepKey} success`);
+            const actionResult = await this.handleOnSuccessAction(
+              stepParams.on_success
+            );
             if (actionResult.skipNext) {
               if (actionResult.isBreak) {
-                // 如果是break，退出主循环
-                return {
-                  success: true,
-                  results,
-                  summary: {
-                    totalCommands: results.length,
-                    successfulCommands: results.filter(r => r.success).length,
-                    failedCommands: results.filter(r => !r.success).length
-                  }
-                };
+                // break，仅在loop中生效，这里忽视，直接执行下一个step
+                this.currentScope.setCurrentStepIndex(currentStepIndex + 1);
+              } else if (actionResult.newIndex !== undefined) {
+                // 说明执行了goto，且找到了新的index
+                this.currentScope.setCurrentStepIndex(actionResult.newIndex);
+              } else {
+                throw new Error("goto action must specify a new index");
               }
-              currentStepIndex = actionResult.newIndex || currentStepIndex;
-              continue;
+            } else {
+              // 没有指定goto，正常执行下一个step
+              this.currentScope.setCurrentStepIndex(currentStepIndex + 1);
             }
+          } else {
+            // 没有指定成功后操作，正常执行下一个step
+            this.currentScope.setCurrentStepIndex(currentStepIndex + 1);
           }
-
-          currentStepIndex++;
         } catch (error) {
           // 记录失败结果
-          console.warn(`Execute ${stepKey} failed: ${error instanceof Error ? error.message : String(error)}`);
+          vError(
+            `Execute ${stepKey} failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
           results.push({
             step: results.length + 1,
             command: stepKey,
             params: stepParams,
             success: false,
-            result: error instanceof Error ? error.message : String(error)
+            result: error instanceof Error ? error.message : String(error),
           });
 
           // 检查是否有失败后操作
           if (stepParams.on_failure) {
-            const actionResult = await this.handleOnFailureAction(stepParams.on_failure);
+            const actionResult = await this.handleOnFailureAction(
+              stepParams.on_failure
+            );
             if (actionResult.skipNext) {
-              currentStepIndex = actionResult.newIndex || currentStepIndex;
+              if (actionResult.isBreak) {
+                // break，仅在loop中生效，这里忽视，直接执行下一个step
+                this.currentScope.setCurrentStepIndex(currentStepIndex + 1);
+              } else if (actionResult.newIndex !== undefined) {
+                // 说明执行了goto，且找到了新的index
+                this.currentScope.setCurrentStepIndex(actionResult.newIndex);
+              } else {
+                throw new Error("goto action must specify a new index");
+              }
               continue;
             }
           } else {
@@ -102,7 +134,8 @@ export class ScriptExecutor {
             throw error;
           }
 
-          currentStepIndex++;
+          // 没有指定失败后操作或不需要跳过下一步，正常执行下一个step
+          this.currentScope.setCurrentStepIndex(currentStepIndex + 1);
         }
       }
 
@@ -112,19 +145,19 @@ export class ScriptExecutor {
         summary: {
           totalCommands: results.length,
           successfulCommands: results.length,
-          failedCommands: 0
-        }
+          failedCommands: 0,
+        },
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : "Unknown error",
         results,
         summary: {
           totalCommands: this.script.steps.length,
           successfulCommands: results.length,
-          failedCommands: 1
-        }
+          failedCommands: 1,
+        },
       };
     }
   }
@@ -133,19 +166,22 @@ export class ScriptExecutor {
    * 执行单个步骤
    */
   private async executeStep(commandName: string, params: any): Promise<any> {
+    vLog(`Execute ${commandName} with params ${JSON.stringify(params)}`);
     switch (commandName) {
-      case 'callfunc':
+      case "label":
+        //如果是label，直接返回即可，不用执行
+        return `it's a label[${params}]`;
+      case "callfunc":
+        //如果是callfunc，则执行函数调用
         return await this.executeCallFunction(params);
-      case 'loop':
+      case "loop":
+        //如果是loop，则执行循环
         return await this.executeLoop(params);
-      case 'goto':
-        return await this.executeGoto(params);
-      case 'break':
-        return await this.executeBreak();
-      default:
+      default: {
         // 执行普通命令
         const command = createCommand(commandName, params);
         return await command.execute(this.driver);
+      }
     }
   }
 
@@ -154,19 +190,21 @@ export class ScriptExecutor {
    */
   private async executeCallFunction(params: { name: string }): Promise<any> {
     const funcName = params.name;
-    const funcSteps = this.functions[funcName];
+    const func = this.functions[funcName];
 
-    if (!funcSteps) {
-      throw new Error(`Function "${funcName}" not found`);
+    if (!func) {
+      throw new FunctionNotFoundError(funcName);
     }
 
     // 创建函数作用域
-    const funcScope = new Scope(funcName, funcSteps);
+    const funcScope = new Scope(funcName, func);
+    // 压入栈
     this.scopeStack.push(funcScope);
+    // 设置当前作用域
     this.currentScope = funcScope;
 
     try {
-      // 执行函数内的步骤
+      // 执行当前作用域内的步骤
       const curSteps = funcScope.getSteps();
       while (funcScope.getCurrentStepIndex() < curSteps.length) {
         const currentStepIndex = funcScope.getCurrentStepIndex();
@@ -178,36 +216,45 @@ export class ScriptExecutor {
           // 执行函数内的当前步骤
           const result = await this.executeStep(stepKey, stepParams);
 
-          // 捕获执行步骤后的索引
-          const indexAfterExecution = funcScope.getCurrentStepIndex();
-
           // 检查是否有成功后操作
           if (stepParams.on_success) {
-            const actionResult = await this.handleOnSuccessAction(stepParams.on_success);
+            const actionResult = await this.handleOnSuccessAction(
+              stepParams.on_success
+            );
             if (actionResult.skipNext) {
               if (actionResult.isBreak) {
-                // 如果是break，退出函数
+                // break，仅在loop中生效，这里忽视，直接执行下一个step
+                this.currentScope.setCurrentStepIndex(currentStepIndex + 1);
+              } else if (actionResult.isReturn) {
+                // return，直接结束当前函数的执行
                 return result;
+              } else if (actionResult.newIndex !== undefined) {
+                // 说明执行了goto，且找到了新的index
+                this.currentScope.setCurrentStepIndex(actionResult.newIndex);
+              } else {
+                throw new Error("goto action must specify a new index");
               }
-              funcScope.setCurrentStepIndex(actionResult.newIndex || currentStepIndex);
-              continue;
+            } else {
+              // 没有指定goto，正常执行下一个step
+              this.currentScope.setCurrentStepIndex(currentStepIndex + 1);
             }
-          }
-
-          // 如果步骤执行后索引没有改变，则继续执行下一个步骤
-          if (indexAfterExecution === currentStepIndex) {
+          } else {
             funcScope.setCurrentStepIndex(currentStepIndex + 1);
           }
         } catch (error) {
           // 检查是否有失败后操作
           if (stepParams.on_failure) {
-            const actionResult = await this.handleOnFailureAction(stepParams.on_failure);
+            const actionResult = await this.handleOnFailureAction(
+              stepParams.on_failure
+            );
             if (actionResult.skipNext) {
               if (actionResult.isBreak) {
                 // 如果是break，退出函数
                 return error;
               }
-              funcScope.setCurrentStepIndex(actionResult.newIndex || currentStepIndex);
+              funcScope.setCurrentStepIndex(
+                actionResult.newIndex || currentStepIndex
+              );
               continue;
             }
           } else {
@@ -230,40 +277,88 @@ export class ScriptExecutor {
   /**
    * 执行循环命令
    */
-  private async executeLoop(params: { count: number, steps: Array<Record<string, any>> }): Promise<any> {
-    const loopCount = params.count;
-    const loopSteps = params.steps;
+  private async executeLoop(loop: {
+    count: number;
+    steps: Array<Record<string, any>>;
+  }): Promise<any> {
+    const loopCount = loop.count;
+    if (!loopCount || loopCount <= 0) {
+      throw new Error("loop count must be greater than 0");
+    }
+    const loopSteps = loop.steps;
 
-    for (let i = 0; i < loopCount; i++) {
-      for (const step of loopSteps) {
-        const stepKey = Object.keys(step)[0];
-        const stepParams = step[stepKey];
+    // 创建整个loop的作用域
+    const loopScope = new Scope("loop", loop);
+    this.scopeStack.push(loopScope);
+    this.currentScope = loopScope;
 
-        try {
-          const result = await this.executeStep(stepKey, stepParams);
+    try {
+      // 执行指定次数的循环
+      for (let i = 0; i < loopCount; i++) {
+        // 重置当前循环的步骤索引为0
+        this.currentScope.setCurrentStepIndex(0);
 
-          // 检查是否有成功后操作
-          if (stepParams.on_success) {
-            const actionResult = await this.handleOnSuccessAction(stepParams.on_success);
-            if (actionResult.isBreak) {
-              // 如果是break，退出循环
-              return result;
+        // 执行循环内的步骤
+        while (this.currentScope.getCurrentStepIndex() < loopSteps.length) {
+          const currentStepIndex = this.currentScope.getCurrentStepIndex();
+          const step = loopSteps[currentStepIndex];
+          const stepKey = Object.keys(step)[0];
+          const stepParams = step[stepKey];
+
+          try {
+            const result = await this.executeStep(stepKey, stepParams);
+
+            // 检查是否有成功后操作
+            if (stepParams.on_success) {
+              const actionResult = await this.handleOnSuccessAction(
+                stepParams.on_success
+              );
+              if (actionResult.skipNext) {
+                if (actionResult.isBreak) {
+                  // 如果是break，退出循环
+                  return result;
+                } else if (actionResult.isReturn) {
+                  //TODO 如果是return，先当 break 用吧
+                  return result;
+                } else if (actionResult.newIndex !== undefined) {
+                  // 说明执行了goto，且找到了新的index
+                  this.currentScope.setCurrentStepIndex(actionResult.newIndex);
+                } else {
+                  throw new Error("goto action must specify a new index");
+                }
+              } else {
+                this.currentScope.setCurrentStepIndex(currentStepIndex + 1);
+              }
+            } else {
+              this.currentScope.setCurrentStepIndex(currentStepIndex + 1);
             }
-          }
-        } catch (error) {
-          // 检查是否有失败后操作
-          if (stepParams.on_failure) {
-            const actionResult = await this.handleOnFailureAction(stepParams.on_failure);
-            if (actionResult.isBreak) {
-              // 如果是break，退出循环
-              return error;
+          } catch (error) {
+            // 检查是否有失败后操作
+            if (stepParams.on_failure) {
+              const actionResult = await this.handleOnFailureAction(
+                stepParams.on_failure
+              );
+              if (actionResult.skipNext) {
+                if (actionResult.isBreak) {
+                  // 如果是break，退出循环
+                  return error;
+                }
+                continue; // 跳过索引自增，使用新的索引
+              }
+            } else {
+              // 如果没有定义失败处理，抛出错误
+              throw error;
             }
-          } else {
-            // 如果没有定义失败处理，抛出错误
-            throw error;
+
+            // 自增步骤索引
+            this.currentScope.setCurrentStepIndex(currentStepIndex + 1);
           }
         }
       }
+    } finally {
+      // 恢复之前的作用域
+      this.scopeStack.pop();
+      this.currentScope = this.scopeStack[this.scopeStack.length - 1];
     }
 
     return null;
@@ -277,7 +372,7 @@ export class ScriptExecutor {
     const labelIndex = this.currentScope.findLabel(targetLabel);
 
     if (labelIndex === -1) {
-      throw new Error(`Label "${targetLabel}" not found in current scope`);
+      throw new LableNotFoundError(targetLabel);
     }
 
     // 设置当前作用域的步骤索引
@@ -296,55 +391,75 @@ export class ScriptExecutor {
   /**
    * 处理成功后的操作
    */
-  private async handleOnSuccessAction(action: { action: string, target?: string }): Promise<{ skipNext: boolean, newIndex?: number, isBreak?: boolean }> {
-    if (action.action === 'goto') {
-      const targetLabel = action.target;
+  private async handleOnSuccessAction(on_success: {
+    action: string;
+    target?: string;
+  }): Promise<{
+    skipNext: boolean;
+    newIndex?: number;
+    isBreak?: boolean;
+    isReturn?: boolean;
+  }> {
+    if (on_success.action === ACTION.Goto) {
+      const targetLabel = on_success.target;
       if (!targetLabel) {
-        throw new Error('goto action requires a target label');
+        throw new Error("goto action requires a target label");
       }
       const labelIndex = this.currentScope.findLabel(targetLabel);
 
       if (labelIndex === -1) {
-        throw new Error(`Label "${targetLabel}" not found in current scope`);
+        throw new LableNotFoundError(targetLabel);
       }
 
       return {
         skipNext: true,
-        newIndex: labelIndex
+        newIndex: labelIndex,
       };
-    } else if (action.action === 'break') {
+    } else if (on_success.action === ACTION.Break) {
       return {
         skipNext: true,
-        isBreak: true
+        isBreak: true,
+      };
+    } else if (on_success.action === ACTION.Return) {
+      return {
+        skipNext: true,
+        isReturn: true,
       };
     }
-
     return { skipNext: false };
   }
 
   /**
    * 处理失败后的操作
    */
-  private async handleOnFailureAction(action: { action: string, target?: string }): Promise<{ skipNext: boolean, newIndex?: number, isBreak?: boolean }> {
-    if (action.action === 'goto') {
-      const targetLabel = action.target;
+  private async handleOnFailureAction(on_failure: {
+    action: string;
+    target?: string;
+  }): Promise<{ skipNext: boolean; newIndex?: number; isBreak?: boolean }> {
+    if (on_failure.action === ACTION.Goto) {
+      const targetLabel = on_failure.target;
       if (!targetLabel) {
-        throw new Error('goto action requires a target label');
+        throw new Error("goto action requires a target label");
       }
       const labelIndex = this.currentScope.findLabel(targetLabel);
 
       if (labelIndex === -1) {
-        throw new Error(`Label "${targetLabel}" not found in current scope`);
+        throw new LableNotFoundError(targetLabel);
       }
 
       return {
         skipNext: true,
-        newIndex: labelIndex
+        newIndex: labelIndex,
       };
-    } else if (action.action === 'break') {
+    } else if (on_failure.action === ACTION.Break) {
       return {
         skipNext: true,
-        isBreak: true
+        isBreak: true,
+      };
+    } else if (on_failure.action === ACTION.Return) {
+      return {
+        skipNext: true,
+        isReturn: true,
       };
     }
 
@@ -357,13 +472,15 @@ export class ScriptExecutor {
  */
 export class Scope {
   private name: string;
+  private func: any;
   private steps: Array<Record<string, any>>;
   private labels: Record<string, number>;
   private currentStepIndex: number;
 
-  constructor(name: string, steps: Array<Record<string, any>>) {
+  constructor(name: string, func: any) {
     this.name = name;
-    this.steps = steps;
+    this.func = func;
+    this.steps = func.steps;
     this.labels = {};
     this.currentStepIndex = 0;
 
@@ -372,13 +489,20 @@ export class Scope {
   }
 
   /**
-   * 解析步骤中的标签
+   * 解析步骤中的label，并记录所在的index
    */
   private parseLabels(): void {
     this.steps.forEach((step, index) => {
-      Object.keys(step).forEach(key => {
-        if (step[key].label) {
-          this.labels[step[key].label] = index;
+      Object.keys(step).forEach((key) => {
+        if (key === "label") {
+          const labelName = step[key];
+          if (!labelName) {
+            throw new LabelNameEmptyError();
+          }
+          if (this.labels[labelName]) {
+            throw new LabelNameDuplicateError(labelName);
+          }
+          this.labels[step[key]] = index;
         }
       });
     });
@@ -397,7 +521,7 @@ export class Scope {
   getSteps(): Array<Record<string, any>> {
     return this.steps;
   }
-  
+
   /**
    * 设置当前步骤索引
    */
@@ -417,15 +541,5 @@ export class Scope {
    */
   getName(): string {
     return this.name;
-  }
-}
-
-/**
- * Break异常 - 用于实现break命令
- */
-export class BreakException extends Error {
-  constructor() {
-    super('Break command executed');
-    this.name = 'BreakException';
   }
 }
