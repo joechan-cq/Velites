@@ -1,13 +1,12 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import { exec } from 'child_process';
-import { spawn } from 'child_process';
+import { exec, spawn } from 'child_process';
 import util from 'util';
 import { remote } from 'webdriverio';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import process from 'process';
-import { parseYamlScript, executeParsedScript, ParsedScriptResult, ScriptExecutionResult } from './yaml-parser';
+import { executeYamlScript, ScriptExecutionResult } from './index';
 
 // 获取当前文件路径信息（ES模块兼容方式）
 const __filename = fileURLToPath(import.meta.url);
@@ -147,7 +146,7 @@ const app = express();
 const port = 3001;
 
 // 存储Appium驱动实例
-const appiumDrivers = new Map<string, any>();
+const appiumDrivers = new Map<string, WebdriverIO.Browser>();
 
 // 启用CORS
 app.use(cors());
@@ -331,40 +330,6 @@ app.get('/api/connected-devices', (req: Request, res: Response) => {
     }
 });
 
-// 执行Appium命令
-app.post('/api/execute/:deviceId', async (req: Request<{ deviceId: string }, {}, ExecuteCommandRequest>, res: Response) => {
-    const { deviceId } = req.params;
-    const { command, params = [] } = req.body;
-
-    try {
-        // 获取驱动实例
-        const driver = appiumDrivers.get(deviceId);
-
-        if (!driver) {
-            return res.status(404).json({ 
-                error: `Device ${deviceId} is not connected` 
-            });
-        }
-
-        // 检查命令是否存在
-        if (typeof driver[command] !== 'function') {
-            return res.status(400).json({ 
-                error: `Command ${command} is not supported` 
-            });
-        }
-
-        // 执行命令
-        const result = await driver[command](...params);
-
-        res.json({
-            success: true,
-            result
-        });
-    } catch (error) {
-        res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-});
-
 // 解析YAML脚本
 app.post('/api/execute-script', async (req: Request<{}, {}, ExecuteScriptRequest>, res: Response) => {
   try {
@@ -391,27 +356,18 @@ app.post('/api/execute-script', async (req: Request<{}, {}, ExecuteScriptRequest
     console.log('Received script to execute:', script);
     console.log('Target device:', deviceId);
     
-    // 解析YAML脚本
-    const parsedScript = parseYamlScript(script);
-    
-    if (!parsedScript.success) {
-      return res.status(400).json({
-        success: false,
-        error: parsedScript.error
-      });
-    }
-    
-    // 执行解析后的脚本
-    const executionResult = await executeParsedScript(parsedScript, driver);
+    // 解析并执行YAML脚本
+    const executionResult = await executeYamlScript(script, driver);
     
     res.json({
       success: executionResult.success,
       message: executionResult.success ? 'Script executed successfully' : 'Script execution failed',
-      script: parsedScript,
+      script: script,
       deviceId,
       executionResult
     });
   } catch (error) {
+    console.log('Error executing script:', error);
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
