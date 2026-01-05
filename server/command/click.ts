@@ -20,7 +20,7 @@ export class ClickCommand extends Command {
    */
   pos?: number[];
   
-  constructor(params: { xpath?: string, pos?: number[], text?: string, image?: string, area?: number[] }) {
+  constructor(params: { selector?: string, pos?: number[] }) {
     super(params);
     this.selector = params.selector;
     this.pos = params.pos;
@@ -30,7 +30,7 @@ export class ClickCommand extends Command {
   validate(): void {
     // 检查是否至少有一个定位参数
     const hasSelector = this.selector && typeof this.selector === 'string';
-    const hasPos = Array.isArray(this.pos) && this.pos.length === 2 && this.params.pos.every(n => typeof n === 'number');
+    const hasPos = this.pos && this.pos.length === 2;
 
     if (!hasSelector && !hasPos) {
       throw new Error('click command must have at least one of the following parameters: selector, pos');
@@ -39,7 +39,8 @@ export class ClickCommand extends Command {
 
   async execute(driver: WebdriverIO.Browser): Promise<any> {
     if (this.selector) {
-      return await driver.tap(this.selector);
+      const elet = await driver.$(this.selector);
+      return await elet.tap();
     } else if (this.pos) {
       // 使用坐标点击
       return await driver.tap({x: this.pos[0], y: this.pos[1]});

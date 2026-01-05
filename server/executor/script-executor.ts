@@ -38,9 +38,9 @@ export class ScriptExecutor {
 
     try {
       let currentStepIndex = 0;
-
-      while (currentStepIndex < this.currentScope.steps.length) {
-        const step = this.currentScope.steps[currentStepIndex];
+      const curSteps = this.currentScope.getSteps();
+      while (currentStepIndex < curSteps.length) {
+        const step = curSteps[currentStepIndex];
         const stepKey = Object.keys(step)[0];
         const stepParams = step[stepKey];
 
@@ -81,13 +81,13 @@ export class ScriptExecutor {
           currentStepIndex++;
         } catch (error) {
           // 记录失败结果
-          console.warn(`Execute ${stepKey} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          console.warn(`Execute ${stepKey} failed: ${error instanceof Error ? error.message : String(error)}`);
           results.push({
             step: results.length + 1,
             command: stepKey,
             params: stepParams,
             success: false,
-            result: error instanceof Error ? error.message : 'Unknown error'
+            result: error instanceof Error ? error.message : String(error)
           });
 
           // 检查是否有失败后操作
@@ -141,7 +141,7 @@ export class ScriptExecutor {
       case 'goto':
         return await this.executeGoto(params);
       case 'break':
-        return await this.executeBreak(params);
+        return await this.executeBreak();
       default:
         // 执行普通命令
         const command = createCommand(commandName, params);
@@ -167,16 +167,19 @@ export class ScriptExecutor {
 
     try {
       // 执行函数内的步骤
-      let currentStepIndex = 0;
-
-      while (currentStepIndex < funcScope.steps.length) {
-        const step = funcScope.steps[currentStepIndex];
+      const curSteps = funcScope.getSteps();
+      while (funcScope.getCurrentStepIndex() < curSteps.length) {
+        const currentStepIndex = funcScope.getCurrentStepIndex();
+        const step = curSteps[currentStepIndex];
         const stepKey = Object.keys(step)[0];
         const stepParams = step[stepKey];
 
         try {
           // 执行函数内的当前步骤
           const result = await this.executeStep(stepKey, stepParams);
+
+          // 捕获执行步骤后的索引
+          const indexAfterExecution = funcScope.getCurrentStepIndex();
 
           // 检查是否有成功后操作
           if (stepParams.on_success) {
@@ -186,12 +189,15 @@ export class ScriptExecutor {
                 // 如果是break，退出函数
                 return result;
               }
-              currentStepIndex = actionResult.newIndex || currentStepIndex;
+              funcScope.setCurrentStepIndex(actionResult.newIndex || currentStepIndex);
               continue;
             }
           }
 
-          currentStepIndex++;
+          // 如果步骤执行后索引没有改变，则继续执行下一个步骤
+          if (indexAfterExecution === currentStepIndex) {
+            funcScope.setCurrentStepIndex(currentStepIndex + 1);
+          }
         } catch (error) {
           // 检查是否有失败后操作
           if (stepParams.on_failure) {
@@ -201,7 +207,7 @@ export class ScriptExecutor {
                 // 如果是break，退出函数
                 return error;
               }
-              currentStepIndex = actionResult.newIndex || currentStepIndex;
+              funcScope.setCurrentStepIndex(actionResult.newIndex || currentStepIndex);
               continue;
             }
           } else {
@@ -209,7 +215,7 @@ export class ScriptExecutor {
             throw error;
           }
 
-          currentStepIndex++;
+          funcScope.setCurrentStepIndex(currentStepIndex + 1);
         }
       }
 
@@ -293,6 +299,9 @@ export class ScriptExecutor {
   private async handleOnSuccessAction(action: { action: string, target?: string }): Promise<{ skipNext: boolean, newIndex?: number, isBreak?: boolean }> {
     if (action.action === 'goto') {
       const targetLabel = action.target;
+      if (!targetLabel) {
+        throw new Error('goto action requires a target label');
+      }
       const labelIndex = this.currentScope.findLabel(targetLabel);
 
       if (labelIndex === -1) {
@@ -319,6 +328,9 @@ export class ScriptExecutor {
   private async handleOnFailureAction(action: { action: string, target?: string }): Promise<{ skipNext: boolean, newIndex?: number, isBreak?: boolean }> {
     if (action.action === 'goto') {
       const targetLabel = action.target;
+      if (!targetLabel) {
+        throw new Error('goto action requires a target label');
+      }
       const labelIndex = this.currentScope.findLabel(targetLabel);
 
       if (labelIndex === -1) {
@@ -380,6 +392,13 @@ export class Scope {
   }
 
   /**
+   * 获取作用域中的步骤
+   */
+  getSteps(): Array<Record<string, any>> {
+    return this.steps;
+  }
+  
+  /**
    * 设置当前步骤索引
    */
   setCurrentStepIndex(index: number): void {
@@ -398,13 +417,6 @@ export class Scope {
    */
   getName(): string {
     return this.name;
-  }
-
-  /**
-   * 获取作用域中的步骤
-   */
-  getSteps(): Array<Record<string, any>> {
-    return this.steps;
   }
 }
 

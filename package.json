@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "server": "tsx server/server.ts",
-    "build:server": "tsc"
+    "build:server": "tsc",
+    "test": "jest"
   },
   "dependencies": {
     "@codemirror/lang-yaml": "^6.1.2",
@@ -30,6 +31,7 @@
     "@eslint/js": "^9.39.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.0.3",
     "@types/react": "^19.2.5",
@@ -42,6 +44,8 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.21.0",
