@@ -1,5 +1,6 @@
-import { parseYamlScript, YamlScript, ScriptExecutionResult } from './parser';
+import { parseYamlScript, ScriptExecutionResult } from './parser';
 import { ScriptExecutor } from './executor';
+import * as WebdriverIO from 'webdriverio';
 
 /**
  * 解析并执行YAML脚本

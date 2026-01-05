@@ -1,5 +1,6 @@
-import { YamlScript, ParsedScriptResult, CommandResult, ScriptExecutionResult } from '../parser/yaml-parser';
+import { YamlScript, CommandResult, ScriptExecutionResult } from '../parser/yaml-parser';
 import { createCommand } from '../command/registry';
+import * as WebdriverIO from 'webdriverio';
 
 /**
  * 脚本执行器 - 负责执行解析后的测试脚本

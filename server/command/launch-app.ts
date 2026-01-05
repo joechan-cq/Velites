@@ -1,4 +1,5 @@
 import { Command } from './base';
+import * as WebdriverIO from 'webdriverio';
 
 /**
  * 启动应用命令类

@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import process from 'process';
 import { executeYamlScript, ScriptExecutionResult } from './index';
+import * as WebdriverIO from 'webdriverio';
 
 // 获取当前文件路径信息（ES模块兼容方式）
 const __filename = fileURLToPath(import.meta.url);
@@ -26,12 +27,6 @@ interface Device {
 // 定义连接请求的接口
 interface ConnectRequest {
   platform: 'android' | 'ios';
-}
-
-// 定义命令执行请求的接口
-interface ExecuteCommandRequest {
-  command: string;
-  params?: any[];
 }
 
 // 定义脚本执行请求的接口
@@ -357,7 +352,7 @@ app.post('/api/execute-script', async (req: Request<{}, {}, ExecuteScriptRequest
     console.log('Target device:', deviceId);
     
     // 解析并执行YAML脚本
-    const executionResult = await executeYamlScript(script, driver);
+    const executionResult: ScriptExecutionResult = await executeYamlScript(script, driver);
     
     res.json({
       success: executionResult.success,
