@@ -65,7 +65,7 @@ export class ScriptExecutor {
 
         try {
           // 执行当前步骤
-          const result = await this.executeStep(stepKey, stepParams);
+          const result = await this.executeStep(results, stepKey, stepParams);
           results.push({
             step: results.length + 1,
             command: stepKey,
@@ -158,7 +158,7 @@ export class ScriptExecutor {
   /**
    * 执行单个步骤
    */
-  private async executeStep(commandName: string, params: any): Promise<any> {
+  private async executeStep(results: CommandResult[], commandName: string, params: any): Promise<any> {
     vLog(`Execute ${commandName} with params ${JSON.stringify(params)}`);
     switch (commandName) {
       case "label":
@@ -166,10 +166,10 @@ export class ScriptExecutor {
         return `it's a label[${params}]`;
       case "callfunc":
         //如果是callfunc，则执行函数调用
-        return await this.executeCallFunction(params);
+        return await this.executeCallFunction(results, params);
       case "loop":
         //如果是loop，则执行循环
-        return await this.executeLoop(params);
+        return await this.executeLoop(results, params);
       default: {
         // 执行普通命令
         const command = createCommand(commandName, params);
@@ -181,7 +181,7 @@ export class ScriptExecutor {
   /**
    * 执行调用函数命令
    */
-  private async executeCallFunction(params: { name: string }): Promise<any> {
+  private async executeCallFunction(results: CommandResult[], params: { name: string }): Promise<any> {
     const funcName = params.name;
     const func = this.functions[funcName];
 
@@ -207,8 +207,14 @@ export class ScriptExecutor {
 
         try {
           // 执行函数内的当前步骤
-          const result = await this.executeStep(stepKey, stepParams);
-
+          const result = await this.executeStep(results, stepKey, stepParams);
+          results.push({
+            step: results.length + 1,
+            command: stepKey,
+            params: stepParams,
+            success: true,
+            result,
+          });
           // 检查是否有成功后操作
           if (stepParams.on_success) {
             const actionResult = await this.handleOnSuccessAction(
@@ -270,7 +276,7 @@ export class ScriptExecutor {
   /**
    * 执行循环命令
    */
-  private async executeLoop(loop: {
+  private async executeLoop(results: CommandResult[], loop: {
     count: number;
     steps: Array<Record<string, any>>;
   }): Promise<any> {
@@ -299,8 +305,14 @@ export class ScriptExecutor {
           const stepParams = step[stepKey];
 
           try {
-            const result = await this.executeStep(stepKey, stepParams);
-
+            const result = await this.executeStep(results, stepKey, stepParams);
+            results.push({
+              step: results.length + 1,
+              command: stepKey,
+              params: stepParams,
+              success: true,
+              result,
+            });
             // 检查是否有成功后操作
             if (stepParams.on_success) {
               const actionResult = await this.handleOnSuccessAction(
