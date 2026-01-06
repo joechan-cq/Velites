@@ -15,6 +15,7 @@ import {
   LabelNameDuplicateError,
   errorOutput,
 } from "./errors";
+import { AssertResult } from "../command/asserts";
 
 /**
  * 脚本执行器 - 负责执行解析后的测试脚本
@@ -28,6 +29,8 @@ export class ScriptExecutor {
   private currentScope: Scope;
   //作用域堆栈
   private scopeStack: Scope[];
+  //断言结果记录
+  private assertResults: CommandResult[];
 
   constructor(driver: WebdriverIO.Browser, script: YamlScript) {
     this.driver = driver;
@@ -36,6 +39,7 @@ export class ScriptExecutor {
     this.scopeStack = [];
     this.currentScope = new Scope("root", this.script);
     this.scopeStack.push(this.currentScope);
+    this.assertResults = [];
 
     // 解析函数定义，将其存储到functions对象中
     if (script.functions && Array.isArray(script.functions)) {
@@ -132,24 +136,42 @@ export class ScriptExecutor {
         }
       }
 
+      // 统计断言结果
+      const totalAssertions = this.assertResults.length;
+      const passedAssertions = this.assertResults.filter(result => result.success).length;
+      const failedAssertions = totalAssertions - passedAssertions;
+
       return {
         success: true,
         results,
+        assertResults: this.assertResults,
         summary: {
           totalCommands: results.length,
           successfulCommands: results.length,
           failedCommands: 0,
+          totalAssertions,
+          passedAssertions,
+          failedAssertions
         },
       };
     } catch (error) {
+      // 统计断言结果
+      const totalAssertions = this.assertResults.length;
+      const passedAssertions = this.assertResults.filter(result => result.success).length;
+      const failedAssertions = totalAssertions - passedAssertions;
+
       return {
         success: false,
         error: errorOutput(error),
         results,
+        assertResults: this.assertResults,
         summary: {
           totalCommands: this.script.steps.length,
           successfulCommands: results.length,
           failedCommands: 1,
+          totalAssertions,
+          passedAssertions,
+          failedAssertions
         },
       };
     }
@@ -173,7 +195,19 @@ export class ScriptExecutor {
       default: {
         // 执行普通命令
         const command = createCommand(commandName, params);
-        return await command.execute(this.driver);
+        const result: AssertResult = await command.execute(this.driver);
+        if (command.isAssert) {
+          // 保存Assert命令的执行结果，无论通过还是不通过都记录
+          const assertResult: CommandResult = {
+            step: results.length + 1,
+            command: commandName,
+            params: params,
+            success: result.pass,
+            result: result
+          };
+          this.assertResults.push(assertResult);
+        }
+        return result;
       }
     }
   }
@@ -241,6 +275,15 @@ export class ScriptExecutor {
             funcScope.setCurrentStepIndex(currentStepIndex + 1);
           }
         } catch (error) {
+          // 记录失败结果
+          results.push({
+            step: results.length + 1,
+            command: stepKey,
+            params: stepParams,
+            success: false,
+            result: errorOutput(error),
+          });
+          
           // 检查是否有失败后操作
           if (stepParams.on_failure) {
             const actionResult = await this.handleOnFailureAction(
@@ -338,6 +381,15 @@ export class ScriptExecutor {
               this.currentScope.setCurrentStepIndex(currentStepIndex + 1);
             }
           } catch (error) {
+            // 记录失败结果
+            results.push({
+              step: results.length + 1,
+              command: stepKey,
+              params: stepParams,
+              success: false,
+              result: errorOutput(error),
+            });
+
             // 检查是否有失败后操作
             if (stepParams.on_failure) {
               const actionResult = await this.handleOnFailureAction(

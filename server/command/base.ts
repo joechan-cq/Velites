@@ -20,6 +20,8 @@ export class Command {
    */
   params: Record<string, any> = {};
 
+  isAssert: boolean = false;
+
   /**
    * 构造函数
    * @param {Object} params - 命令参数

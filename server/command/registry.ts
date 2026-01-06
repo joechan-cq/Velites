@@ -2,6 +2,7 @@ import { Command } from './base';
 import { LaunchAppCommand } from './launch-app';
 import { WaitCommand } from './wait';
 import { ClickCommand } from './click';
+import { AssertVisible, AssertTextEquals } from './asserts';
 
 /**
  * 命令注册表 - 存储所有支持的测试操作
@@ -10,6 +11,8 @@ const commands: Record<string, any> = {
   'launch_app': LaunchAppCommand,
   'wait': WaitCommand,
   'click': ClickCommand,
+  'assertVisible': AssertVisible,
+  'assertTextEquals': AssertTextEquals,
 };
 
 /**
@@ -51,4 +54,6 @@ export {
   LaunchAppCommand,
   WaitCommand,
   ClickCommand,
+  AssertVisible,
+  AssertTextEquals,
 };

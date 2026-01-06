@@ -42,10 +42,14 @@ export interface CommandResult {
 export interface ScriptExecutionResult {
   success: boolean;
   results?: CommandResult[];
+  assertResults?: CommandResult[];
   summary?: {
     totalCommands: number;
     successfulCommands: number;
     failedCommands: number;
+    totalAssertions: number;
+    passedAssertions: number;
+    failedAssertions: number;
   };
   error?: string;
 }
